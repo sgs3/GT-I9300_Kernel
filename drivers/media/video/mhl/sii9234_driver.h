@@ -30,6 +30,10 @@
 #define CONFIG_SS_FACTORY	1
 #endif
 
+#ifndef __CONFIG_TMDS_OFFON_WORKAROUND__
+#define __CONFIG_TMDS_OFFON_WORKAROUND__
+#endif
+
 #ifndef CONFIG_SII9234_RCP
 #define CONFIG_SII9234_RCP		1
 #include <linux/input.h>
@@ -526,6 +530,9 @@ struct sii9234_data {
 	struct work_struct		rgnd_work;
 	struct work_struct		mhl_cbus_write_stat_work;
 	struct work_struct		mhl_d3_work;
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	struct work_struct		tmds_offon_work;
+#endif
 	struct timer_list		cbus_command_timer;
 #ifdef CONFIG_MACH_MIDAS
 	struct wake_lock		mhl_wake_lock;
@@ -545,6 +552,9 @@ struct sii9234_data {
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 	bool suspend_state;
+#endif
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	bool tmds_state;
 #endif
 };
 

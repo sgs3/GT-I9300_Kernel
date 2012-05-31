@@ -607,12 +607,15 @@ static void dhd_set_packet_filter(int value, dhd_pub_t *dhd)
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 {
+	char iovbuf[32];
 #ifndef CUSTOMER_HW_SAMSUNG
 	int power_mode = PM_MAX;
 	/* wl_pkt_filter_enable_t	enable_parm; */
-	char iovbuf[32];
 	int bcn_li_dtim = 3;
 	uint roamvar = 1;
+#endif
+#ifdef BCM4334_CHIP
+	int bcn_li_bcn;
 #endif
 
 	DHD_ERROR(("%s: enter, value = %d in_suspend=%d\n",
@@ -651,6 +654,12 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				iovbuf, sizeof(iovbuf));
 			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 #endif
+#ifdef BCM4334_CHIP
+			bcn_li_bcn = 0;
+			bcm_mkiovar("bcn_li_bcn", (char *)&bcn_li_bcn,
+				4, iovbuf, sizeof(iovbuf));
+			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+#endif
 		} else {
 
 #ifdef PKT_FILTER_SUPPORT
@@ -679,6 +688,12 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 			roamvar = dhd_roam_disable;
 			bcm_mkiovar("roam_off", (char *)&roamvar, 4, iovbuf,
 				sizeof(iovbuf));
+			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+#endif
+#ifdef BCM4334_CHIP
+			bcn_li_bcn = 1;
+			bcm_mkiovar("bcn_li_bcn", (char *)&bcn_li_bcn,
+				4, iovbuf, sizeof(iovbuf));
 			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 #endif
 		}
@@ -3373,6 +3388,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	uint32 dongle_align = DHD_SDALIGN;
 #if defined(BCM4334_CHIP)
 	uint32 glom = 5; /* 2012.02.21 for perfomance */
+	uint32 bcn_li_bcn = 1;
 #elif defined(BCM43241_CHIP)
 	uint32 glom = 1;
 #else
@@ -3727,6 +3743,9 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 #ifdef OKC_DEBUG
 	setbit(eventmask, WLC_E_ROAM_START);
 #endif /* OKC_DEBUG */
+#ifdef CUSTOMER_HW_SAMSUNG
+	clrbit(eventmask, WLC_E_TXFAIL);
+#endif
 
 	/* Write updated Event mask */
 	bcm_mkiovar("event_msgs", eventmask, WL_EVENTING_MASK_LEN, iovbuf, sizeof(iovbuf));
@@ -3809,6 +3828,11 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		DHD_ERROR(("%s Setting WL UP failed %d\n", __FUNCTION__, ret));
 		goto done;
 	}
+
+#ifdef BCM4334_CHIP
+	bcm_mkiovar("bcn_li_bcn", (char *)&bcn_li_bcn, 4, iovbuf, sizeof(iovbuf));
+	dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+#endif
 
 	/* query for 'ver' to get version info from firmware */
 	memset(buf, 0, sizeof(buf));

@@ -1013,11 +1013,12 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 	}
 	else if (strnicmp(command, CMD_BTCOEXMODE, strlen(CMD_BTCOEXMODE)) == 0) {
 		uint mode = *(command + strlen(CMD_BTCOEXMODE) + 1) - '0';
-
+#if 0
 		if (mode == 1)
 			net_os_set_packet_filter(net, 0); /* DHCP starts */
 		else
 			net_os_set_packet_filter(net, 1); /* DHCP ends */
+#endif
 #ifdef WL_CFG80211
 		bytes_written = wl_cfg80211_set_btcoex_dhcp(net, command);
 #endif

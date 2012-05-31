@@ -5818,8 +5818,10 @@ dhd_bus_watchdog(dhd_pub_t *dhdp)
 				if (bus->dhd_idlecount >= (DHD_IDLE_TIMEOUT_MS/dhd_watchdog_ms)) {
 					DHD_TIMER(("%s: DHD Idle state!!\n", __FUNCTION__));
 
-					if (SLPAUTO_ENAB(bus))
-							dhdsdio_bussleep(bus, TRUE);
+					if (SLPAUTO_ENAB(bus)) {
+						if (dhdsdio_bussleep(bus, TRUE) != BCME_BUSY)
+							dhd_os_wd_timer(bus->dhd, 0);
+					}
 					else
 						dhdsdio_clkctl(bus, CLK_NONE, FALSE);
 

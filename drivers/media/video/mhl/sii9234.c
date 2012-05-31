@@ -180,11 +180,18 @@ static struct cbus_packet cbus_pkt_buf[CBUS_PKT_BUF_COUNT];
 static int cbus_command_abort_state;
 #endif
 
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+static struct workqueue_struct *sii9234_tmds_offon_wq;
+#endif
+
 /*////////////////////////////////////////////////////////////////////////////*/
 /*/////////////////     function declaration  area     ///////////////////////*/
 /*////////////////////////////////////////////////////////////////////////////*/
 
 static u8 sii9234_tmds_control(struct sii9234_data *sii9234, bool enable);
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+static u8 sii9234_tmds_control2(struct sii9234_data *sii9234, bool enable);
+#endif
 static bool cbus_command_request(struct sii9234_data *sii9234,
 				 enum cbus_command command, u8 offset, u8 data);
 static void cbus_command_response(struct sii9234_data *sii9234);
@@ -537,6 +544,17 @@ static int cbus_set_reg(struct sii9234_data *sii9234, unsigned int offset,
 
 	return cbus_write_reg(sii9234, offset, value);
 }
+
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+void sii9234_tmds_offon_work(struct work_struct *work)
+{
+	struct sii9234_data *sii9234 = dev_get_drvdata(sii9244_mhldev);
+
+	pr_debug("%s()\n", __func__);
+	sii9234_tmds_control2(sii9234, false);
+	sii9234_tmds_control2(sii9234, true);
+}
+#endif
 
 static int mhl_wake_toggle(struct sii9234_data *sii9234,
 			   unsigned long high_period, unsigned long low_period)
@@ -1415,6 +1433,7 @@ static void goto_d3(void)
 	sii9234->state = NO_MHL_STATUS;
 
 	sii9234->rsen = false;
+
 #if defined(CONFIG_SAMSUNG_WORKAROUND_HPD_GLANCE) &&\
 	 defined(CONFIG_HAS_EARLYSUSPEND)
 	if (!sii9234->suspend_state)
@@ -2090,9 +2109,15 @@ static int sii9234_detection_callback(void)
 	if (ret < 0)
 		goto unhandled;
 
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	ret = mhl_tx_write_reg(sii9234, MHL_TX_INTR4_ENABLE_REG,
+			       RGND_READY_MASK | CBUS_LKOUT_MASK |
+			       MHL_DISC_FAIL_MASK | MHL_EST_MASK | (1 << 0));
+#else
 	ret = mhl_tx_write_reg(sii9234, MHL_TX_INTR4_ENABLE_REG,
 			       RGND_READY_MASK | CBUS_LKOUT_MASK |
 			       MHL_DISC_FAIL_MASK | MHL_EST_MASK);
+#endif
 	if (ret < 0)
 		goto unhandled;
 
@@ -2915,6 +2940,100 @@ static bool cbus_command_request(struct sii9234_data *sii9234,
 	return true;
 }
 
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+static u8 sii9234_tmds_control(struct sii9234_data *sii9234, bool enable)
+{
+	int ret;
+
+	if (sii9234->tmds_state == enable) {
+		if (enable) {
+			pr_debug("sii9234: MHL HPD High, already enabled TMDS\n");
+			ret = mhl_tx_set_reg(sii9234, MHL_TX_INT_CTRL_REG,
+					(1 << 4) | (1 << 5));
+			if (ret < 0)
+				return ret;
+		} else {
+			pr_debug("sii9234 MHL HPD low, already disabled TMDS\n");
+			ret = mhl_tx_clear_reg(sii9234, MHL_TX_INT_CTRL_REG,
+					(1 << 4) | (1 << 5));
+			if (ret < 0)
+				return ret;
+		}
+		return ret;
+	} else {
+		sii9234->tmds_state = enable;
+	}
+
+	if (enable) {
+#ifdef	__CONFIG_RSEN_LOST_PATCH__
+		ret = mhl_tx_write_reg(sii9234, MHL_TX_MHLTX_CTL2_REG, 0xFC);
+		if (ret < 0)
+			return ret;
+#endif
+		ret = mhl_tx_set_reg(sii9234, MHL_TX_TMDS_CCTRL, (1 << 4));
+		if (ret < 0)
+			return ret;
+		pr_debug("sii9234: MHL HPD High, enabled TMDS\n");
+		ret = mhl_tx_set_reg(sii9234, MHL_TX_INT_CTRL_REG,
+				     (1 << 4) | (1 << 5));
+		if (ret < 0)
+			return ret;
+	} else {
+		ret = mhl_tx_clear_reg(sii9234, MHL_TX_TMDS_CCTRL, (1 << 4));
+		if (ret < 0)
+			return ret;
+		pr_debug("sii9234 MHL HPD low, disabled TMDS\n");
+		ret = mhl_tx_clear_reg(sii9234, MHL_TX_INT_CTRL_REG,
+				       (1 << 4) | (1 << 5));
+		if (ret < 0)
+			return ret;
+#ifdef	__CONFIG_RSEN_LOST_PATCH__
+		ret = mhl_tx_write_reg(sii9234, MHL_TX_MHLTX_CTL2_REG, 0xC0);
+		if (ret < 0)
+			return ret;
+#endif
+	}
+
+	return ret;
+}
+
+static u8 sii9234_tmds_control2(struct sii9234_data *sii9234, bool enable)
+{
+	int ret;
+
+	if (sii9234->tmds_state == enable) {
+		pr_debug("%s(): already %s TMDS!!\n", __func__,
+				enable ? "enabled" : "disabled");
+		return 0;
+	} else {
+		sii9234->tmds_state = enable;
+	}
+
+	if (enable) {
+#ifdef	__CONFIG_RSEN_LOST_PATCH__
+		ret = mhl_tx_write_reg(sii9234, MHL_TX_MHLTX_CTL2_REG, 0xFC);
+		if (ret < 0)
+			return ret;
+#endif
+		ret = mhl_tx_set_reg(sii9234, MHL_TX_TMDS_CCTRL, (1 << 4));
+		if (ret < 0)
+			return ret;
+		pr_debug("sii9234: enabled TMDS\n");
+	} else {
+		ret = mhl_tx_clear_reg(sii9234, MHL_TX_TMDS_CCTRL, (1 << 4));
+		if (ret < 0)
+			return ret;
+		pr_debug("sii9234: disabled TMDS\n");
+#ifdef	__CONFIG_RSEN_LOST_PATCH__
+		ret = mhl_tx_write_reg(sii9234, MHL_TX_MHLTX_CTL2_REG, 0xC0);
+		if (ret < 0)
+			return ret;
+#endif
+	}
+
+	return ret;
+}
+#else
 static u8 sii9234_tmds_control(struct sii9234_data *sii9234, bool enable)
 {
 	int ret;
@@ -2951,6 +3070,7 @@ static u8 sii9234_tmds_control(struct sii9234_data *sii9234, bool enable)
 
 	return ret;
 }
+#endif
 
 static irqreturn_t sii9234_irq_thread(int irq, void *data)
 {
@@ -3019,6 +3139,19 @@ static irqreturn_t sii9234_irq_thread(int irq, void *data)
 
 	pr_debug("sii9234: irq %02x/%02x %02x/%02x %02x/%02x\n",
 		 intr1, intr1_en, intr4, intr4_en, cbus_intr1, cbus_intr2);
+
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	if (intr4 & (1 << 0)) {
+		ret = mhl_tx_read_reg(sii9234, 0x81, &value);
+		if (ret < 0) {
+			pr_err("[ERROR] %s() read 0x81\n", __func__);
+			goto i2c_error_exit;
+		} else
+			pr_debug("%s() 0x81 = 0x%x\n", __func__, value);
+
+		queue_work(sii9234_tmds_offon_wq, &(sii9234->tmds_offon_work));
+	}
+#endif
 
 	if (intr4 & RGND_READY_INT) {
 		if (sii9234_callback_sched == 0) {
@@ -3597,6 +3730,7 @@ static void sii9234_early_suspend(struct early_suspend *early_sus)
 	struct sii9234_data *sii9234 = container_of(early_sus,
 			struct sii9234_data, early_suspend);
 
+	pr_debug("%s()\n", __func__);
 	if (!sii9234 || !sii9234->pdata)
 		return;
 
@@ -3610,13 +3744,13 @@ static void sii9234_late_resume(struct early_suspend *early_sus)
 	struct sii9234_data *sii9234 = container_of(early_sus,
 			struct sii9234_data, early_suspend);
 
+	pr_debug("%s()\n", __func__);
 	if (!sii9234 || !sii9234->pdata)
 		return;
 
 	sii9234_mutex_lock(&sii9234->lock);
 	sii9234->suspend_state = false;
 	sii9234_mutex_unlock(&sii9234->lock);
-
 }
 #endif
 
@@ -3629,12 +3763,13 @@ static int __devinit sii9234_mhl_tx_i2c_probe(struct i2c_client *client,
 	struct input_dev *input;
 #endif
 	int ret;
-#ifdef __CONFIG_SS_FACTORY__
+#if defined(__CONFIG_SS_FACTORY__) || defined(__CONFIG_MHL_SWING_LEVEL__)
 	struct class *sec_mhl;
 #endif
 #ifdef __CONFIG_MHL_DEBUG__
 	mhl_dbg_flag = 1;
 #endif
+
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -EIO;
 
@@ -3711,6 +3846,17 @@ static int __devinit sii9234_mhl_tx_i2c_probe(struct i2c_client *client,
 		ret = -ENOMEM;
 	}
 	INIT_WORK(&sii9234->msc_work, sii9234_process_msc_work);
+#endif
+
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	sii9234_tmds_offon_wq =
+		create_singlethread_workqueue("sii9234_tmds_offon_wq");
+	if (!sii9234_tmds_offon_wq) {
+		printk(KERN_ERR	"[ERROR] %s() tmds_offon"
+				" workqueue create fail\n", __func__);
+		ret = -ENOMEM;
+	}
+	INIT_WORK(&sii9234->tmds_offon_work, sii9234_tmds_offon_work);
 #endif
 
 #if defined(__CONFIG_SS_FACTORY__) || defined(__CONFIG_MHL_SWING_LEVEL__)
@@ -3793,6 +3939,9 @@ static int __devinit sii9234_mhl_tx_i2c_probe(struct i2c_client *client,
 	sii9234->early_suspend.resume = sii9234_late_resume;
 	register_early_suspend(&sii9234->early_suspend);
 	sii9234->suspend_state = false;
+#endif
+#ifdef __CONFIG_TMDS_OFFON_WORKAROUND__
+	sii9234->tmds_state = 0;
 #endif
 	return 0;
 
