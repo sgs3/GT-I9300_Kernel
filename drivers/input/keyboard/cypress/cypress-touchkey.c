@@ -583,6 +583,13 @@ static int touchkey_firmware_update(struct touchkey_i2c *tkey_i2c)
 			return TK_UPDATE_FAIL;
 		}
 
+		ret = i2c_touchkey_read(tkey_i2c->client, KEYCODE_REG, data, 3);
+		if (ret < 0) {
+			printk(KERN_DEBUG
+			"[TouchKey] i2c read fail. do not excute firm update.\n");
+		}
+		tkey_i2c->firmware_ver = data[1];
+		tkey_i2c->module_ver = data[2];
 		printk(KERN_DEBUG "[TouchKey] firm ver = %d, module ver = %d\n",
 			tkey_i2c->firmware_ver, tkey_i2c->module_ver);
 	} else {
@@ -633,6 +640,7 @@ static int touchkey_firmware_update(struct touchkey_i2c *tkey_i2c)
 		if (retry <= 0) {
 			tkey_i2c->pdata->power_on(0);
 			tkey_i2c->update_status = TK_UPDATE_FAIL;
+			ret = TK_UPDATE_FAIL;
 		}
 	} else {
 		if (tkey_i2c->firmware_ver >= 0x0A) {
@@ -1566,6 +1574,16 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 		}
 	}
 
+	ret = touchkey_i2c_check(tkey_i2c);
+	if (ret < 0) {
+		printk(KERN_DEBUG
+		"[TouchKey] i2c read fail. do not excute firm update.\n");
+
+		input_unregister_device(input_dev);
+		touchkey_probe = false;
+		return -EBUSY;
+	}
+
 	ret =
 		request_threaded_irq(tkey_i2c->irq, NULL, touchkey_interrupt,
 				IRQF_DISABLED | IRQF_TRIGGER_FALLING |
@@ -1579,13 +1597,6 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 		return -EBUSY;
 	}
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	tkey_i2c->early_suspend.suspend =
-		(void *)sec_touchkey_early_suspend;
-	tkey_i2c->early_suspend.resume =
-		(void *)sec_touchkey_late_resume;
-	register_early_suspend(&tkey_i2c->early_suspend);
-#endif
 
 	tkey_i2c->pdata->led_power_on(1);
 
@@ -1599,6 +1610,14 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 		touchkey_probe = false;
 		return -EBUSY;
 	}
+#endif
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	tkey_i2c->early_suspend.suspend =
+		(void *)sec_touchkey_early_suspend;
+	tkey_i2c->early_suspend.resume =
+		(void *)sec_touchkey_late_resume;
+	register_early_suspend(&tkey_i2c->early_suspend);
 #endif
 
 #if defined(TK_HAS_AUTOCAL)
