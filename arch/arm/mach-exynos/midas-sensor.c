@@ -206,7 +206,7 @@ static u8 cm36651_get_threshold(void)
 	/* Add model config and threshold here. */
 #if defined(CONFIG_MACH_M0)
 	if (system_rev >= 12)
-		threshold = 13;
+		threshold = 15;
 #elif defined(CONFIG_MACH_C1_KOR_SKT) || defined(CONFIG_MACH_C1_KOR_KT) ||\
 	defined(CONFIG_MACH_C1_KOR_LGT)
 	if (system_rev >= 6)

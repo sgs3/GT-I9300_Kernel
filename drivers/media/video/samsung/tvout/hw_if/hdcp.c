@@ -458,9 +458,11 @@ bksv_read_err:
 
 static int s5p_hdcp_read_ri(void)
 {
+	static unsigned long int cnt;
 	u8 ri[2] = {0, 0};
 	u8 rj[2] = {0, 0};
 
+	cnt++;
 	ri[0] = readb(hdmi_base + S5P_HDMI_HDCP_Ri_0);
 	ri[1] = readb(hdmi_base + S5P_HDMI_HDCP_Ri_1);
 
@@ -492,7 +494,11 @@ static int s5p_hdcp_read_ri(void)
 compare_err:
 	hdcp_info.event		= HDCP_EVENT_STOP;
 	hdcp_info.auth_status	= NOT_AUTHENTICATED;
-	tvout_err("read ri : failed - missmatch\n");
+	tvout_err("read ri : failed - missmatch "
+			"Rx(ddc) rj[0]:0x%02x, rj[1]:0x%02x "
+			"Tx(register) ri[0]:0x%02x, ri[1]:0x%02x "
+			"cnt = %lu\n",
+			rj[0], rj[1], ri[0], ri[1], cnt);
 	msleep(10);
 	return -1;
 }

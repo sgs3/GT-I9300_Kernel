@@ -3202,6 +3202,19 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 #endif
 	touch_is_pressed = 0;
 
+#if defined(CONFIG_MACH_M0) || defined(CONFIG_MACH_C1)
+	gpio_request(GPIO_OLED_DET, "OLED_DET");
+	ret = gpio_get_value(GPIO_OLED_DET);
+	printk(KERN_DEBUG
+	"[TSP] OLED_DET = %d\n", ret);
+
+	if (ret == 0) {
+		printk(KERN_DEBUG
+		"[TSP] device wasn't connected to board\n");
+		return -EIO;
+	}
+#endif
+
 	if (!i2c_check_functionality(adapter, I2C_FUNC_I2C))
 		return -EIO;
 
@@ -3243,6 +3256,8 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 		info->max_y = 1280;
 	}
 
+	i2c_set_clientdata(client, info);
+
 	info->callbacks.inform_charger = melfas_ta_cb;
 	if (info->register_cb)
 		info->register_cb(&info->callbacks);
@@ -3250,7 +3265,6 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	info->pdata->power(true);
 	msleep(100);
 
-	i2c_set_clientdata(client, info);
 	ret = i2c_master_recv(client, buf, 1);
 	if (ret < 0) {		/* tsp connect check */
 		pr_err("%s: i2c fail...tsp driver unload [%d], Add[%d]\n",
